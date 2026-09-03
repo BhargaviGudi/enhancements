@@ -28,9 +28,9 @@
       - [Integration tests](#integration-tests)
       - [e2e tests](#e2e-tests)
   - [Graduation Criteria](#graduation-criteria)
-    - [Alpha (target 1.37)](#alpha-target-137)
-    - [Beta (target 1.38)](#beta-target-138)
-    - [GA (target 1.40)](#ga-target-140)
+    - [Alpha (target 1.38)](#alpha-target-138)
+    - [Beta (target 1.39)](#beta-target-139)
+    - [GA (target 1.41)](#ga-target-141)
   - [Upgrade / Downgrade Strategy](#upgrade--downgrade-strategy)
   - [Version Skew Strategy](#version-skew-strategy)
 - [Production Readiness Review Questionnaire](#production-readiness-review-questionnaire)
@@ -225,7 +225,7 @@ Node Declared Features: This feature integrates with the Node Declared Features 
 
 ### Risks and Mitigations
 
-1. **Users expect to raise PID limits above node default**
+1. **Users expect to raise PID limits above node-imposed maximum**
    - Risk: The "lower value wins" design means Pods can only restrict, not raise. Users may expect `pids: 8192` to override a node `podPidsLimit` of 4096.
    - Mitigation: Clear documentation. The node admin retains control — raise `podPidsLimit` if workloads need more.
 
@@ -357,12 +357,12 @@ e2e tests provide good test coverage of the interaction between the API server (
 
 ##### e2e tests
 
-* Pod PID limit lower than node default is applied.
-* Pod PID limit higher than node default is capped at node default and a `PIDLimitCapped` event is emitted.
+* Pod PID limit lower than node podPidsLimit is applied.
+* Pod PID limit higher than node podPidsLimit is capped at node podPidsLimit and a `PIDLimitCapped` event is emitted.
 * Multi-container pod shares a single pod-level PID limit.
-* No pod PID limit falls back to node default.
-* Pod with pid limit is admitted under Baseline PSA profile and limit is enforced.
-* Pod with pid limit is admitted under Restricted PSA profile and limit is enforced.
+* No pod PID limit falls back to node podPidsLimit.
+* Pod with pids limit is admitted under Baseline PSA profile and limit is enforced.
+* Pod with pids limit is admitted under Restricted PSA profile and limit is enforced.
 * Pod specifying `spec.resources.limits.pids` on a cgroupsv1 node is rejected during admission.
 * Static pod with `spec.resources.limits.pids` has PID limit enforced at the pod cgroup level (bypasses apiserver).
 * Static pod without `spec.resources.limits.pids` falls back to node-level `podPidsLimit`.
@@ -375,20 +375,20 @@ e2e tests provide good test coverage of the interaction between the API server (
 
 ### Graduation Criteria
 
-#### Alpha (target 1.37)
+#### Alpha (target 1.38)
 
 - Feature implemented behind `PerPodPIDLimit` feature gate (disabled by default)
 - Kubelet enforces `min(podPidsLimit, pod.spec.resources.limits.pids)` on Pod cgroup
 - Unit tests and initial node e2e tests completed
 
-#### Beta (target 1.38)
+#### Beta (target 1.39)
 
 - Feature enabled by default
 - Node e2e tests stable in Testgrid for at least one release
 - Downgrade and upgrade testing completed
 - Address feedback and bugs reported during Alpha
 
-#### GA (target 1.40)
+#### GA (target 1.41)
 
 - At least 2 releases in Beta without major bugs
 - Remove feature gate
@@ -400,8 +400,8 @@ e2e tests provide good test coverage of the interaction between the API server (
 Upgrade: No changes required for existing workloads. Enable the `PerPodPIDLimit`
 feature gate to start using the feature.
 
-Downgrade: Existing Pods with `spec.resources.limits.pids` continue running with
-node-level `podPidsLimit`. The field is preserved on existing objects but
+Downgrade: When downgrading to a Kubernetes version without this feature, existing Pods with `spec.resources.limits.pids` continue running with
+node-level `podPidsLimit` (the older kubelet does not enforce the pod-level limit). The field is preserved on existing objects but
 rejected on new Pods.
 
 ### Version Skew Strategy
@@ -459,7 +459,7 @@ No.
 
 ###### Can the feature be disabled once it has been enabled (i.e. can we roll back the enablement)?
 
-Yes; disable gate and restart components. Existing Pods retain their cgroup PID settings until restarted.
+Yes; disable gate and restart components. Existing Pods retain their cgroup PID settings until restarted (different from version downgrade, where the kubelet no longer enforces the limit immediately).
 
 ###### What happens if we reenable the feature if it was previously rolled back?
 
@@ -655,13 +655,13 @@ For each of them, fill in the following information by copying the below templat
 - 2026-05-05: Initial discussion in [sig-node weekly meeting](https://docs.google.com/document/d/1Ne57gvidMEWXR70OxxnRkYquAoMpt56o75oZtg-OeBg/edit?tab=t.0#heading=h.16dqthn53k2t)
 - 2026-05-06: [Enhancement issue created](https://github.com/kubernetes/enhancements/issues/6063)
 - 2026-05-06: [KEP PR created](https://github.com/kubernetes/enhancements/pull/6064)
-- 2026-05-25: [Alpha implementation PR created](https://github.com/kubernetes/kubernetes/pull/139277) targeting v1.37
+- 2026-05-25: [Alpha implementation PR created](https://github.com/kubernetes/kubernetes/pull/139277) retargeted to v1.38
 
 ## Drawbacks
 
 This feature only works on cgroupsv2 nodes. Pods specifying `spec.resources.limits.pids` will be rejected on cgroupsv1 nodes, which may cause confusion in mixed clusters where some nodes have been upgraded to cgroupsv2 and others have not. Workload authors need to be aware of the underlying cgroup version to avoid unexpected admission failures.
 
-Additionally, the "lower value wins" design means pods can only restrict PID limits below the node default, not raise them. Users who expect `pids: 8192` to override a node `podPidsLimit` of 4096 may find this counterintuitive, though this is consistent with how Kubernetes treats node-level resource limits as the administrator's ceiling.
+Additionally, the "lower value wins" design means pods can only restrict PID limits below the node-imposed maximum, not raise them. Users who expect `pids: 8192` to override a node `podPidsLimit` of 4096 may find this counterintuitive, though this is consistent with how Kubernetes treats node-level resource limits as the administrator's ceiling.
 
 ## Alternatives
 
